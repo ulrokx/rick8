@@ -1,22 +1,15 @@
-CC = g++
-CFLAGS = -Wall -g
-objects = main.o CHIP8.o Display.o
+CXX = g++
+OBJS = main.cpp Display.o CHIP8.o
+CXXFLAGS = `sdl2-config --cflags` -Wall`
+LFLAGS = `sdl2-config --libs`
+.DELETE_ON_ERROR:
+all: $(OBJS)
+	$(CXX) $(OBJS) $(CFLAGS) $(LFLAGS) -o main
+	make clean
 
-main: $(objects)
-	$(CC) $(CFLAGS) -o main $(objects)
-	make cleanos
+$(OBJS): %.o: %.cpp
+	$(CXX) -c $< -o $@
 
-main.o: main.cpp Display.h CHIP8.h
-	$(CC) -c $(CFLAGS) main.cpp
-
-display.o: Display.h
-	$(CC) -c $(CFLAGS) Display.h
-
-chip8.o: CHIP8.h Display.h
-	$(CC) -c $(CFLAGS) CHIP8.h
-
+.PHONY: clean
 clean:
-	rm -f main $(objects)
-
-cleanos:
-	rm -f $(objects)
+	rm -f *.o

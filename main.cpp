@@ -7,5 +7,7 @@ int main(int argc, char** argv) {
         exit(1);
     }
     chip8->load_ROM(argv[1]);
-    chip8->print_RAM();
+    while(true) {
+        
+    }
 }
