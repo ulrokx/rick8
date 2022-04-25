@@ -2,7 +2,11 @@
 #include <stdint.h>
 #include <memory>
 #include <fstream>
+#include <random>
+#include <time.h>
+#include <SDL2/SDL.h>
 #include "Display.h"
+#include "Keypad.h"
 
 #ifndef CHIP8_H
 #define CHIP8_H
@@ -14,6 +18,7 @@
 #define STACK_HEIGHT 16
 #define FONTSET_SIZE 0x50
 #define FONTSET_START 0x50
+#define TPH 16.666667
 
 class CHIP8
 {
@@ -47,11 +52,26 @@ private:
     // stack
     uint16_t STACK[STACK_HEIGHT];
     // stack pointer
-    uint8_t SP;
+    uint8_t SP = -1;
+    // attachments
     std::unique_ptr<Display> display;
-
+    std::unique_ptr<Keypad> keypad;
+    // timers
+    uint64_t dtStart;
+    uint8_t DTIME = 0;
+    uint64_t stStart;
+    uint8_t STIME = 0;
+    // quirk flags
+    bool copy_on_shift = false;
+    bool jump_offset_quirk = false;
+    bool add_i_carry = true;
+    bool change_i_on_copy = false;
+    // random stuff
+    std::random_device rd;
+    std::mt19937 gen;
+    std::uniform_int_distribution<int> rnd;
     // display
-
+    void update_timers();
     void CLS();                                        // 00E0 clear the display
     void RET();                                        // 00EE return
     void JP(uint16_t addr);                            // 1NNN jump to NNN
@@ -67,10 +87,10 @@ private:
     void XOR(uint8_t x_reg, uint8_t y_reg);            // 8xy3 XOR vx and vy - store in vx
     void ADDC(uint8_t x_reg, uint8_t y_reg);           // 8xy4 add vx and vy - store in vx, > 255, VF = 1
     void SUB(uint8_t x_reg, uint8_t y_reg);            // 8xy5 sub vx and vy - store in vx !!!
-    void SHR(uint8_t x_reg, uint8_t y_reg);            // 8xy6
-    void SUBN(uint8_t x_reg, uint8_t y_reg);           // 8xy7
-    void SHL(uint8_t x_reg, uint8_t y_reg);            // 8xyE
-    void SNE(uint8_t x_reg, uint8_t y_reg);            // 9xy0 if vx != vy incr pc by 2
+    void SHR(uint8_t x_reg, uint8_t y_reg);            // 8xy6 shift right
+    void SUBN(uint8_t x_reg, uint8_t y_reg);           // 8xy7 sub vx from vy
+    void SHL(uint8_t x_reg, uint8_t y_reg);            // 8xyE shift left
+    void SNER(uint8_t x_reg, uint8_t y_reg);            // 9xy0 if vx != vy incr pc by 2
     void LDI(uint16_t addr);                           // Annn set IC to nnn
     void JPP(uint16_t addr);                           // Bnnn jump to nnn + v0
     void RND(uint8_t reg, uint8_t byte);               // Cxkk gen rand 0-255 and with kk - store vx

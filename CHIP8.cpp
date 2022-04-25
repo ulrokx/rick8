@@ -1,8 +1,12 @@
 #include "CHIP8.h"
 
-CHIP8::CHIP8()
+CHIP8::CHIP8() : gen(rd()), rnd(std::uniform_int_distribution<>(0, 0xFF))
 {
+    gen.seed(time(NULL));
+
     display = std::make_unique<Display>();
+    keypad = std::make_unique<Keypad>();
+
     std::fill(RAM, RAM + RAM_SIZE, 0);
 }
 
@@ -54,8 +58,30 @@ uint16_t CHIP8::fetch()
     uint16_t instruction = (static_cast<uint16_t>(RAM[PC]) << 8) | RAM[PC + 1];
     PC += 2;
     return instruction;
+    update_timers();
 }
 
+void CHIP8::update_timers()
+{
+    if (DTIME > 0)
+    {
+        uint64_t t = SDL_GetTicks();
+        DTIME = DTIME - ((t - dtStart) / TPH);
+        if (DTIME > 0xFF)
+        {
+            DTIME = 0;
+        }
+    }
+    if (STIME > 0)
+    {
+        uint64_t t = SDL_GetTicks();
+        STIME = STIME - ((t - stStart) / TPH);
+        if (STIME > 0xFF)
+        {
+            STIME = 0;
+        }
+    }
+}
 void CHIP8::decode_and_execute(uint16_t instruction)
 {
     uint8_t first_nibble = (instruction >> 12) & 0xF; // XXXXoooooooooooo
@@ -302,20 +328,7 @@ void CHIP8::JP(uint16_t address)
     PC = address;
 }
 
-void CHIP8::LD(uint8_t reg, uint8_t byte)
-{
-    V[reg] = byte;
-}
 
-void CHIP8::ADD(uint8_t reg, uint8_t byte)
-{
-    V[reg] += byte;
-}
-
-void CHIP8::LDI(uint16_t addr)
-{
-    IC = addr;
-}
 
 void CHIP8::DRW(uint8_t x_reg, uint8_t y_reg, uint8_t n)
 {
@@ -358,4 +371,227 @@ void CHIP8::DRW(uint8_t x_reg, uint8_t y_reg, uint8_t n)
 
 void CHIP8::RET()
 {
+    PC = STACK[SP];
+    --SP;
+    if (SP <= -2)
+    {
+        std::cout << "nothing to return to\n";
+        exit(1);
+    }
+}
+
+void CHIP8::CALL(uint16_t addr)
+{
+    ++SP;
+    if (SP >= 16)
+    {
+        std::cout << "stack overflow\n";
+        exit(1);
+    }
+    STACK[SP] = PC;
+    PC = addr;
+}
+
+void CHIP8::SE(uint8_t reg, uint8_t byte)
+{
+    PC = (PC + 2) ? V[reg] == byte : PC;
+}
+
+void CHIP8::SNE(uint8_t reg, uint8_t byte)
+{
+    PC = (PC + 2) ? V[reg] != byte : PC;
+}
+
+void CHIP8::SER(uint8_t x_reg, uint8_t y_reg)
+{
+    PC = (PC + 2) ? (V[x_reg] == V[y_reg]) : PC;
+}
+
+void CHIP8::SNER(uint8_t x_reg, uint8_t y_reg)
+{
+    PC = (PC + 2) ? (V[x_reg] != V[y_reg]) : PC;
+}
+
+void CHIP8::LD(uint8_t reg, uint8_t byte)
+{
+    V[reg] = byte;
+}
+
+void CHIP8::ADD(uint8_t reg, uint8_t byte)
+{
+    V[reg] += byte;
+}
+
+void CHIP8::LDR(uint8_t x_reg, uint8_t y_reg)
+{
+    V[x_reg] = V[y_reg];
+}
+
+void CHIP8::OR(uint8_t x_reg, uint8_t y_reg)
+{
+    V[x_reg] |= V[y_reg];
+}
+
+void CHIP8::AND(uint8_t x_reg, uint8_t y_reg)
+{
+    V[x_reg] &= V[y_reg];
+}
+
+void CHIP8::XOR(uint8_t x_reg, uint8_t y_reg)
+{
+    V[x_reg] ^= V[y_reg];
+}
+
+void CHIP8::ADDC(uint8_t x_reg, uint8_t y_reg)
+{
+    uint8_t sum = V[x_reg] + V[y_reg];
+    V[0xF] = 0x01 ? sum < V[x_reg] : 0x00;
+    V[x_reg] = sum;
+}
+
+void CHIP8::SUB(uint8_t x_reg, uint8_t y_reg)
+{
+    uint8_t diff = V[x_reg] - V[y_reg];
+    V[0xF] = 0x01 ? diff <= V[x_reg] : 0x00;
+    V[x_reg] = diff;
+}
+
+void CHIP8::SUBN(uint8_t x_reg, uint8_t y_reg)
+{
+    uint8_t diff = V[y_reg] - V[x_reg];
+    V[0xF] = 0x01 ? diff <= V[y_reg] : 0x00;
+    V[x_reg] = diff;
+}
+
+void CHIP8::SHR(uint8_t x_reg, uint8_t y_reg)
+{
+    if (copy_on_shift == true)
+    {
+        V[x_reg] = V[y_reg];
+    }
+    V[0xF] = 0x01 ? (V[x_reg] & 0x01) : 0x00;
+    V[x_reg] = V[x_reg] >> 1;
+}
+
+void CHIP8::SHL(uint8_t x_reg, uint8_t y_reg)
+{
+    if (copy_on_shift == true)
+    {
+        V[x_reg] = V[y_reg];
+    }
+    V[0xF] = 0x01 ? (V[x_reg] & 0b10000000) : 0x00;
+    V[x_reg] = V[x_reg] << 1;
+}
+
+void CHIP8::LDI(uint16_t addr)
+{
+    IC = addr;
+}
+
+void CHIP8::JPP(uint16_t addr)
+{
+    uint8_t jmp_val;
+    if (jump_offset_quirk)
+    {
+        uint8_t reg = (addr >> 8) & 0xF;
+        jmp_val = V[reg];
+    }
+    else
+    {
+        jmp_val = V[0x0];
+    }
+    PC = addr + jmp_val;
+}
+
+void CHIP8::RND(uint8_t reg, uint8_t byte)
+{
+    V[reg] = rnd(gen) & byte;
+}
+
+void CHIP8::SKP(uint8_t reg)
+{
+    if (keypad->getKey(V[reg]) == true)
+    {
+        ++PC;
+    }
+}
+
+void CHIP8::SKNP(uint8_t reg)
+{
+    if (keypad->getKey(V[reg]) == false)
+    {
+        ++PC;
+    }
+}
+
+void CHIP8::LDT(uint8_t reg)
+{
+    V[reg] = DTIME;
+}
+
+void CHIP8::LDDT(uint8_t reg)
+{
+    DTIME = V[reg];
+}
+
+void CHIP8::LDST(uint8_t reg)
+{
+    STIME = V[reg];
+}
+
+void CHIP8::ADDI(uint8_t reg)
+{
+    IC += V[reg];
+    if (add_i_carry && IC > 0x0FFF)
+    {
+        V[0xF] = 0x01;
+    }
+}
+
+void CHIP8::LDK(uint8_t reg)
+{
+    while (!keypad->isPressed())
+    {
+        update_timers();
+        keypad->updateKeypad();
+    }
+}
+
+void CHIP8::LDF(uint8_t reg)
+{
+    IC = RAM[FONTSET_START + 5 * V[reg]];
+}
+
+void CHIP8::LDB(uint8_t reg)
+{
+    uint8_t num = V[reg];
+    RAM[IC + 2] = static_cast<uint8_t>(num % 10);
+    num /= 10;
+    RAM[IC + 1] = static_cast<uint8_t>(num % 10);
+    num /= 10;
+    RAM[IC] = num % 10;
+}
+
+void CHIP8::RTM(uint8_t reg)
+{
+    for (int i = 0x0; i <= reg; ++i)
+    {
+        RAM[IC] = V[i];
+        if (change_i_on_copy)
+        {
+            ++IC;
+        }
+    }
+}
+
+void CHIP8::MTR(uint8_t reg)
+{
+    for (int i = 0x0; i <= reg; ++i)
+    {
+        V[i] = RAM[IC];
+        if (change_i_on_copy)
+        {
+            ++IC;
+        }
+    }
 }

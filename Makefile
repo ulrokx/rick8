@@ -1,5 +1,5 @@
 CXX = g++
-OBJS = main.cpp Display.o CHIP8.o
+OBJS = main.cpp Display.o CHIP8.o Keypad.o
 CXXFLAGS = `sdl2-config --cflags` -Wall`
 LFLAGS = `sdl2-config --libs`
 .DELETE_ON_ERROR:
