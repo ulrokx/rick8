@@ -78,3 +78,7 @@ void Display::init_SDL()
         exit(1);
     }
 }
+
+void Display::destroy_window() {
+    SDL_DestroyWindow(window.get());
+}

@@ -1,10 +1,10 @@
 CXX = g++
-OBJS = main.cpp Display.o CHIP8.o Keypad.o
+OBJS = Display.o CHIP8.o Keypad.o
 CXXFLAGS = `sdl2-config --cflags` -Wall`
 LFLAGS = `sdl2-config --libs`
 .DELETE_ON_ERROR:
 all: $(OBJS)
-	$(CXX) $(OBJS) $(CFLAGS) $(LFLAGS) -o main
+	$(CXX) main.cpp $(OBJS) $(CFLAGS) $(LFLAGS) -o main
 	make clean
 
 $(OBJS): %.o: %.cpp

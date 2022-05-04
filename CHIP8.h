@@ -52,7 +52,7 @@ private:
     // stack
     uint16_t STACK[STACK_HEIGHT];
     // stack pointer
-    uint8_t SP = -1;
+    int SP;
     // attachments
     std::unique_ptr<Display> display;
     std::unique_ptr<Keypad> keypad;
@@ -66,6 +66,8 @@ private:
     bool jump_offset_quirk = false;
     bool add_i_carry = true;
     bool change_i_on_copy = false;
+    //debug
+    bool debug = true;
     // random stuff
     std::random_device rd;
     std::mt19937 gen;
@@ -111,6 +113,8 @@ public:
     void decode_and_execute(uint16_t instruction);
     void load_ROM(char const *filename);
     void print_RAM();
-    CHIP8();
+    CHIP8(bool dbg);
+    void step();
+    void clean_up();
 };
 #endif // CHIP8_H

@@ -1,12 +1,14 @@
 #include "CHIP8.h"
 
-CHIP8::CHIP8() : gen(rd()), rnd(std::uniform_int_distribution<>(0, 0xFF))
+CHIP8::CHIP8(bool dbg) : gen(rd()), rnd(std::uniform_int_distribution<>(0, 0xFF))
 {
+    debug = dbg;
     gen.seed(time(NULL));
 
     display = std::make_unique<Display>();
     keypad = std::make_unique<Keypad>();
-
+    PC = ROM_START;
+    SP = -1;
     std::fill(RAM, RAM + RAM_SIZE, 0);
 }
 
@@ -55,10 +57,10 @@ void CHIP8::print_RAM()
 
 uint16_t CHIP8::fetch()
 {
-    uint16_t instruction = (static_cast<uint16_t>(RAM[PC]) << 8) | RAM[PC + 1];
+    uint16_t instruction = RAM[PC] << 8 | RAM[PC+1];
     PC += 2;
-    return instruction;
     update_timers();
+    return instruction;
 }
 
 void CHIP8::update_timers()
@@ -82,15 +84,29 @@ void CHIP8::update_timers()
         }
     }
 }
+
+void CHIP8::step() {
+    if(keypad->handleEvents() == 0xFF) {
+        clean_up();
+        exit(1);
+    }
+    decode_and_execute(fetch());
+    display->draw();
+}
+
+void CHIP8::clean_up() {
+    display->destroy_window();
+    SDL_Quit();
+}
 void CHIP8::decode_and_execute(uint16_t instruction)
 {
+    std::cout << "PC: " << std::hex << PC << " Instruction: " << std::hex << instruction << "\n";
     uint8_t first_nibble = (instruction >> 12) & 0xF; // XXXXoooooooooooo
     uint8_t second_nibble = (instruction >> 8) & 0xF; // ooooXXXXoooooooo
     uint8_t third_nibble = (instruction >> 4) & 0xF;  // ooooooooXXXXoooo
     uint8_t fourth_nibble = instruction & 0xF;
     uint8_t last_byte = (instruction & 0xFF);           // ooooooooXXXXXXXX
     uint16_t last_three_nibbles = instruction & 0x0FFF; // ooooXXXXXXXXXXXX
-
     switch (first_nibble)
     {
     case 0x0:
@@ -104,9 +120,10 @@ void CHIP8::decode_and_execute(uint16_t instruction)
             CLS();
             break;
         default:
-            std::cout << "0nnn sys address\n";
-            exit(1);
+        if(debug) {
         }
+        }
+        break;
     }
     case 0x1:
     {
@@ -202,7 +219,7 @@ void CHIP8::decode_and_execute(uint16_t instruction)
     }
     case 0x9:
     {
-        SNE(second_nibble, third_nibble);
+        SNER(second_nibble, third_nibble);
         break;
     }
     case 0xA:
@@ -371,6 +388,11 @@ void CHIP8::DRW(uint8_t x_reg, uint8_t y_reg, uint8_t n)
 
 void CHIP8::RET()
 {
+    if (SP <= -1) {
+        std::cout << "nothing to return to\n";
+        exit(1);
+    }
+    std::cout << "SP:" << SP << " STACK[SP]: " << STACK[SP] << "\n";
     PC = STACK[SP];
     --SP;
     if (SP <= -2)
@@ -378,38 +400,42 @@ void CHIP8::RET()
         std::cout << "nothing to return to\n";
         exit(1);
     }
+    std::cout << "new SP after ret: " << SP << " new PC: " << PC << "\n"; 
 }
 
 void CHIP8::CALL(uint16_t addr)
 {
+    std::cout << "SP before:" << SP << "\n";
     ++SP;
+    std::cout << "SP after:" << SP << "\n";
     if (SP >= 16)
     {
         std::cout << "stack overflow\n";
         exit(1);
     }
     STACK[SP] = PC;
+    std::cout << "STACK[SP] CALL: " << STACK[SP] << "\n";
     PC = addr;
 }
 
 void CHIP8::SE(uint8_t reg, uint8_t byte)
 {
-    PC = (PC + 2) ? V[reg] == byte : PC;
+    PC = V[reg] == byte ? (PC + 2) : PC;
 }
 
-void CHIP8::SNE(uint8_t reg, uint8_t byte)
+void CHIP8::SNE(uint8_t x_reg, uint8_t byte)
 {
-    PC = (PC + 2) ? V[reg] != byte : PC;
+    PC = V[x_reg] != byte ? (PC + 2) : PC;
 }
 
 void CHIP8::SER(uint8_t x_reg, uint8_t y_reg)
 {
-    PC = (PC + 2) ? (V[x_reg] == V[y_reg]) : PC;
+    PC = (V[x_reg] == V[y_reg]) ? (PC + 2) : PC;
 }
 
 void CHIP8::SNER(uint8_t x_reg, uint8_t y_reg)
 {
-    PC = (PC + 2) ? (V[x_reg] != V[y_reg]) : PC;
+    PC = (V[x_reg] != V[y_reg]) ? (PC + 2) : PC;
 }
 
 void CHIP8::LD(uint8_t reg, uint8_t byte)
@@ -445,21 +471,21 @@ void CHIP8::XOR(uint8_t x_reg, uint8_t y_reg)
 void CHIP8::ADDC(uint8_t x_reg, uint8_t y_reg)
 {
     uint8_t sum = V[x_reg] + V[y_reg];
-    V[0xF] = 0x01 ? sum < V[x_reg] : 0x00;
+    V[0xF] = sum < V[x_reg] ? 0x01 : 0x00;
     V[x_reg] = sum;
 }
 
 void CHIP8::SUB(uint8_t x_reg, uint8_t y_reg)
 {
     uint8_t diff = V[x_reg] - V[y_reg];
-    V[0xF] = 0x01 ? diff <= V[x_reg] : 0x00;
+    V[0xF] = diff <= V[x_reg] ? 0x01 : 0x00;
     V[x_reg] = diff;
 }
 
 void CHIP8::SUBN(uint8_t x_reg, uint8_t y_reg)
 {
     uint8_t diff = V[y_reg] - V[x_reg];
-    V[0xF] = 0x01 ? diff <= V[y_reg] : 0x00;
+    V[0xF] = diff <= V[y_reg] ? 0x01 : 0x00;
     V[x_reg] = diff;
 }
 
@@ -550,11 +576,17 @@ void CHIP8::ADDI(uint8_t reg)
 
 void CHIP8::LDK(uint8_t reg)
 {
-    while (!keypad->isPressed())
+    uint8_t key;
+    while (true)
     {
+        key = keypad->handleEvents();
+        if(key == 0xFF) clean_up();
+        if(key != 0xEE) break;
         update_timers();
-        keypad->updateKeypad();
     }
+    std::cout << "break from loop\n";
+    V[reg] = key;
+
 }
 
 void CHIP8::LDF(uint8_t reg)
@@ -576,7 +608,8 @@ void CHIP8::RTM(uint8_t reg)
 {
     for (int i = 0x0; i <= reg; ++i)
     {
-        RAM[IC] = V[i];
+        uint16_t start = IC;
+        RAM[start + i] = V[i];
         if (change_i_on_copy)
         {
             ++IC;
@@ -588,7 +621,8 @@ void CHIP8::MTR(uint8_t reg)
 {
     for (int i = 0x0; i <= reg; ++i)
     {
-        V[i] = RAM[IC];
+        uint16_t start = IC;
+        V[i] = RAM[start + i];
         if (change_i_on_copy)
         {
             ++IC;

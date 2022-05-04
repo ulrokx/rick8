@@ -20,10 +20,11 @@ private:
 public:
     Display();
     void setPixel(uint8_t row, uint8_t col, bool on);
-    bool getPixel(uint8_t row, uint8_t col);
+    [[nodiscard]] bool getPixel(uint8_t row, uint8_t col);
     void draw();
     void clear();
     void init_SDL();
+    void destroy_window();
     std::unique_ptr<SDL_Rect> rect_from_pixel(int row, int col);
 };
 
